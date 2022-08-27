@@ -9,7 +9,7 @@ from vapoursynth import core
 
 from vsgan import archs
 from vsgan.networks.basenetwork import BaseNetwork
-from vsgan.utilities import frame_to_tensor, tensor_to_clip, recursive_tile_tensor
+from vsgan.utilities import frame_to_tensor, recursive_tile_tensor, tensor_to_frame
 
 
 class ESRGAN(BaseNetwork):
@@ -61,26 +61,18 @@ class ESRGAN(BaseNetwork):
         if not self.model:
             raise ValueError("A model must be loaded before running.")
 
-        self.clip = core.std.FrameEval(
-            core.std.BlankClip(
-                clip=self.clip,
-                width=self.clip.width * self.model.scale,
-                height=self.clip.height * self.model.scale
-            ),
-            functools.partial(
-                self._apply,
-                i=str(len(self.depth_cache)),
-                clip=self.clip,
-                model=self.model,
-                overlap_=overlap
-            )
+        nclip = self.clip.std.BlankClip(self.clip.width * self.model.scale, self.clip.height * self.model.scale)
+        self.clip = core.std.ModifyFrame(
+            nclip,
+            [self.clip, nclip],
+            functools.partial(self._apply, i=str(len(self.depth_cache)), model=self.model, overlap_=overlap)
         )
 
         return self
 
     @torch.inference_mode()
-    def _apply(self, n: int, i: str, clip: vs.VideoNode, model: torch.nn.Module, overlap_: int) -> vs.VideoNode:
-        lr_img = frame_to_tensor(clip.get_frame(n))
+    def _apply(self, n: int, f: list[vs.VideoFrame], i: str, model: torch.nn.Module, overlap_: int) -> vs.VideoFrame:
+        lr_img = frame_to_tensor(f[0])
         lr_img.unsqueeze_(0)
         lr_img = lr_img.to(self.device)
 
@@ -95,7 +87,7 @@ class ESRGAN(BaseNetwork):
         )
         self.depth_cache[i] = depth
 
-        return tensor_to_clip(clip, sr_img)
+        return tensor_to_frame(f[1].copy(), sr_img)
 
 
 __ALL__ = (ESRGAN,)
